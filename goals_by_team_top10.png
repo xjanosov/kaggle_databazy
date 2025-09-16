@@ -1,0 +1,29 @@
+import pandas as pd
+
+events = pd.read_csv("data/events.csv")
+print(events.columns)
+import matplotlib.pyplot as plt
+import seaborn as sns
+import matplotlib.pyplot as plt
+import seaborn as sns
+sns.set_style("whitegrid")
+
+# Percento gólov podľa tímu
+work = events[["event_team", "is_goal"]].dropna()
+
+# is_goal na 0/1
+if work["is_goal"].dtype != "int64" and work["is_goal"].dtype != "float64":
+    work["is_goal"] = work["is_goal"].astype(str).str.lower().isin(["1", "true", "yes"]).astype(int)
+
+goals_by_team = work.groupby("event_team")["is_goal"].mean().sort_values(ascending=False)
+top10 = (goals_by_team * 100).head(10)
+
+plt.figure(figsize=(10, 6))
+sns.barplot(x=top10.values, y=top10.index, palette="viridis")
+plt.xlabel("Percento gólov (%)")
+plt.ylabel("Tím")
+plt.title("Percento gólov podľa tímu (top 10)")
+plt.tight_layout()
+
+plt.savefig("goals_by_team_top10.png", dpi=150)
+plt.show()
