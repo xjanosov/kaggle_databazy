@@ -1,0 +1,105 @@
+# football_events_analysis.py
+import os
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+import os
+os.makedirs("data", exist_ok=True)
+!mv events.csv data/
+sns.set_style("whitegrid")
+
+# === 1) Cesty k dátam
+DATA_DIR = "data"  # sem ulož CSV súbory
+EVENTS_CSV = os.path.join(DATA_DIR, "events.csv")
+COUNTRIES_CSV_CANDIDATES = [
+    os.path.join(DATA_DIR, "ginf.csv"),
+    os.path.join(DATA_DIR, "countries.csv"),
+    os.path.join(DATA_DIR, "matches.csv")
+]
+
+# === 2) Načítanie dát
+if not os.path.exists(EVENTS_CSV):
+    raise FileNotFoundError(f"Neviem nájsť {EVENTS_CSV}. Uprav cestu v DATA_DIR.")
+
+events = pd.read_csv(EVENTS_CSV)
+print("Načítané events.csv, stĺpce:")
+print(events.columns.tolist())
+
+# Pomocná funkcia: nájdi prvý existujúci súbor s krajinami
+countries_df = None
+for path in COUNTRIES_CSV_CANDIDATES:
+    if os.path.exists(path):
+        try:
+            tmp = pd.read_csv(path)
+            if tmp.shape[1] >= 2:
+                countries_df = tmp
+                print(f"Načítané info o krajinách z: {path}")
+                break
+        except Exception:
+            continue
+
+# === 3) Pomocná funkcia na bezpečné získanie stĺpca
+def pick_col(df, candidates):
+    for c in candidates:
+        if c in df.columns:
+            return c
+    return None
+
+# === 4) Graf 1: shot_place
+shot_place_col = pick_col(events, ["shot_place", "shot_place_name", "shot_place_id"])
+if shot_place_col is None:
+    print("⚠️ Nenašiel som stĺpec pre 'shot_place' – tento graf preskočím.")
+else:
+    counts = events[shot_place_col].dropna().value_counts().head(10)
+    plt.figure(figsize=(10, 6))
+    sns.barplot(x=counts.values, y=counts.index, palette="Blues_r")
+    plt.xlabel("Počet záznamov")
+    plt.ylabel("shot_place (top 10)")
+    plt.title("Rozdelenie hodnoty 'shot_place' (top 10)")
+    plt.tight_layout()
+    plt.savefig("shot_place_top10.png", dpi=150)
+    plt.show()
+
+# === 5) Graf 2: percento gólov podľa krajiny
+is_goal_col = pick_col(events, ["is_goal", "goal", "shot_is_goal"])
+if is_goal_col is None:
+    print("⚠️ Nenašiel som stĺpec pre 'is_goal' – druhý graf preskočím.")
+else:
+    country_col_in_events = pick_col(events, ["country", "country_name", "country_id", "league_country"])
+    if country_col_in_events is not None:
+        work = events[[is_goal_col, country_col_in_events]].copy()
+        work = work.dropna(subset=[country_col_in_events])
+        if work[is_goal_col].dtype not in ["int64", "float64"]:
+            work[is_goal_col] = work[is_goal_col].astype(str).str.lower().isin(["1", "true", "yes"]).astype(int)
+        goals_by_country = work.groupby(country_col_in_events)[is_goal_col].mean().sort_values(ascending=False)
+        top10 = (goals_by_country * 100).head(10)
+        plt.figure(figsize=(10, 6))
+        sns.barplot(x=top10.values, y=top10.index, palette="viridis")
+        plt.xlabel("Percento gólov (%)")
+        plt.ylabel("Krajina")
+        plt.title("Percento gólov podľa krajiny (top 10)")
+        plt.tight_layout()
+        plt.savefig("goals_by_country_top10.png", dpi=150)
+        plt.show()
+    elif countries_df is not None:
+        key_in_events = pick_col(events, ["match_id", "id_odsp", "id_match", "country_id"])
+        key_in_countries = pick_col(countries_df, ["match_id", "id_odsp", "id_match", "country_id"])
+        name_in_countries = pick_col(countries_df, ["country", "country_name", "league_country", "league"])
+        if key_in_events and key_in_countries and name_in_countries:
+            tmp = events[[key_in_events, is_goal_col]].copy()
+            if tmp[is_goal_col].dtype not in ["int64", "float64"]:
+                tmp[is_goal_col] = tmp[is_goal_col].astype(str).str.lower().isin(["1", "true", "yes"]).astype(int)
+            merged = pd.merge(tmp, countries_df[[key_in_countries, name_in_countries]], left_on=key_in_events, right_on=key_in_countries, how="left")
+            merged = merged.dropna(subset=[name_in_countries])
+            goals_by_country = merged.groupby(name_in_countries)[is_goal_col].mean().sort_values(ascending=False)
+            top10 = (goals_by_country * 100).head(10)
+            plt.figure(figsize=(10, 6))
+            sns.barplot(x=top10.values, y=top10.index, palette="viridis")
+            plt.xlabel("Percento gólov (%)")
+            plt.ylabel("Krajina")
+            plt.title("Percento gólov podľa krajiny (top 10)")
+            plt.tight_layout()
+            plt.savefig("goals_by_country_top10.png", dpi=150)
+            plt.show()
+        else:
+            print("⚠️ Nepodarilo sa spojiť krajiny s events. Druhý graf preskočený.")
